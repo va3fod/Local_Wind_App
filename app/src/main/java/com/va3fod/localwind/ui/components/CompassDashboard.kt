@@ -1,0 +1,144 @@
+package com.va3fod.localwind.ui.components
+
+import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.runtime.Composable
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.drawscope.rotate
+import androidx.compose.ui.text.*
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import kotlin.math.cos
+import kotlin.math.sin
+
+@OptIn(ExperimentalTextApi::class)
+@Composable
+fun CompassDashboard(
+    currentAzimuth: Float,
+    lockedWindDirection: Float,
+    declination: Float,
+    modifier: Modifier = Modifier
+) {
+    val textMeasurer = rememberTextMeasurer()
+
+    Box(modifier = modifier.background(Color(0xFF121212))) {
+        Canvas(modifier = Modifier.fillMaxSize()) {
+            val center = Offset(size.width / 2, size.height / 2)
+            val radius = size.minDimension / 2 * 0.95f
+            val innerRadius = radius * 0.88f
+
+            // Lubber Line (Top Reference)
+            drawLine(
+                color = Color.White,
+                start = Offset(center.x, center.y - radius - 5.dp.toPx()),
+                end = Offset(center.x, center.y - innerRadius),
+                strokeWidth = 2.dp.toPx()
+            )
+
+            // True Heading Orientation (0 = True North)
+            val trueHeading = (currentAzimuth + declination + 360) % 360
+            
+            rotate(-trueHeading, center) {
+                // Dial Circles
+                drawCircle(color = Color.DarkGray, radius = radius, center = center, style = Stroke(width = 1.dp.toPx()))
+                drawCircle(color = Color.DarkGray, radius = innerRadius, center = center, style = Stroke(width = 1.dp.toPx()))
+
+                // Ticks
+                for (i in 0 until 360 step 2) {
+                    val angle = Math.toRadians(i.toDouble() - 90).toFloat()
+                    val isMajor = i % 10 == 0
+                    val isCardinal = i % 90 == 0
+                    
+                    val tickLen = if (isCardinal) 18.dp.toPx() else if (isMajor) 12.dp.toPx() else 6.dp.toPx()
+                    
+                    drawLine(
+                        color = if (i == 0) Color.Cyan else Color.LightGray,
+                        start = Offset(center.x + innerRadius * cos(angle), center.y + innerRadius * sin(angle)),
+                        end = Offset(center.x + (innerRadius - tickLen) * cos(angle), center.y + (innerRadius - tickLen) * sin(angle)),
+                        strokeWidth = if (isMajor) 2.dp.toPx() else 1.dp.toPx()
+                    )
+
+                    if (i % 30 == 0 && !isCardinal) {
+                        val textRadius = innerRadius - 28.dp.toPx()
+                        val textLayout = textMeasurer.measure(
+                            text = i.toString(),
+                            style = TextStyle(color = Color.Gray, fontSize = 11.sp)
+                        )
+                        drawText(textLayout, topLeft = Offset(center.x + textRadius * cos(angle) - textLayout.size.width/2, center.y + textRadius * sin(angle) - textLayout.size.height/2))
+                    }
+                }
+
+                // Cardinal Labels
+                val cardinals = mapOf(0 to "N", 90 to "E", 180 to "S", 270 to "W")
+                cardinals.forEach { (deg, label) ->
+                    val angle = Math.toRadians(deg.toDouble() - 90).toFloat()
+                    val textLayout = textMeasurer.measure(
+                        text = label,
+                        style = TextStyle(color = if (deg == 0) Color.Cyan else Color.White, fontSize = 24.sp, fontWeight = FontWeight.ExtraBold)
+                    )
+                    drawText(textLayout, topLeft = Offset(center.x + (innerRadius - 35.dp.toPx()) * cos(angle) - textLayout.size.width/2, center.y + (innerRadius - 35.dp.toPx()) * sin(angle) - textLayout.size.height/2))
+                }
+
+                // True North Indicator (Cyan Triangle)
+                val triPathTrue = Path().apply {
+                    moveTo(center.x, center.y - radius - 12.dp.toPx())
+                    lineTo(center.x - 7.dp.toPx(), center.y - radius - 2.dp.toPx())
+                    lineTo(center.x + 7.dp.toPx(), center.y - radius - 2.dp.toPx())
+                    close()
+                }
+                drawPath(triPathTrue, color = Color.Cyan)
+
+                // Magnetic North Indicator (Red Triangle)
+                rotate(-declination, center) {
+                    val triPathMag = Path().apply {
+                        moveTo(center.x, center.y - radius - 12.dp.toPx())
+                        lineTo(center.x - 7.dp.toPx(), center.y - radius - 2.dp.toPx())
+                        lineTo(center.x + 7.dp.toPx(), center.y - radius - 2.dp.toPx())
+                        close()
+                    }
+                    drawPath(triPathMag, color = Color.Red)
+                }
+
+                // YELLOW WIND ARROW (Source to Center)
+                // The lockedWindDirection is the True Heading where the wind is coming FROM.
+                // We rotate by lockedWindDirection to align the drawing context with the source.
+                rotate(lockedWindDirection, center) {
+                    val arrowStartRadius = innerRadius - 5.dp.toPx()
+                    val arrowLength = innerRadius * 0.45f
+                    val arrowHeadSize = 14.dp.toPx()
+                    
+                    val headTipRadius = innerRadius - arrowLength
+                    val path = Path().apply {
+                        // Arrow head at the end of the shaft (pointing towards center)
+                        moveTo(center.x, center.y - headTipRadius)
+                        lineTo(center.x - arrowHeadSize, center.y - headTipRadius + (arrowHeadSize * 1.5f))
+                        lineTo(center.x + arrowHeadSize, center.y - headTipRadius + (arrowHeadSize * 1.5f))
+                        close()
+                    }
+                    
+                    // Wind Arrow Shaft (Yellow)
+                    drawLine(
+                        color = Color.Yellow,
+                        start = Offset(center.x, center.y - arrowStartRadius),
+                        end = Offset(center.x, center.y - headTipRadius),
+                        strokeWidth = 7.dp.toPx()
+                    )
+                    // Wind Arrow Head (Yellow)
+                    drawPath(path, color = Color.Yellow)
+                }
+            }
+
+            // Static Center Crosshair
+            val crossSize = 25.dp.toPx()
+            drawLine(Color.Gray, Offset(center.x - crossSize, center.y), Offset(center.x + crossSize, center.y), 1.dp.toPx())
+            drawLine(Color.Gray, Offset(center.x, center.y - crossSize), Offset(center.x, center.y + crossSize), 1.dp.toPx())
+        }
+    }
+}
