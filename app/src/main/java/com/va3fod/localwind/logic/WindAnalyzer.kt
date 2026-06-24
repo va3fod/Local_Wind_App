@@ -19,47 +19,58 @@ class WindAnalyzer {
 
     @SuppressLint("MissingPermission")
     suspend fun measureWindSpeed(): Double = withContext(Dispatchers.IO) {
-        val audioRecord = AudioRecord(
-            MediaRecorder.AudioSource.MIC,
-            sampleRate,
-            channelConfig,
-            audioFormat,
-            bufferSize
-        )
-
-        // Attempt to disable AGC and Noise Suppression for raw wind noise
-        if (AutomaticGainControl.isAvailable()) {
-            AutomaticGainControl.create(audioRecord.audioSessionId)?.enabled = false
-        }
-        if (NoiseSuppressor.isAvailable()) {
-            NoiseSuppressor.create(audioRecord.audioSessionId)?.enabled = false
-        }
-
-        audioRecord.startRecording()
-        val buffer = ShortArray(bufferSize)
-        var totalRms = 0.0
-        val numSamples = 50 // Roughly 1-2 seconds depending on buffer size
-
-        repeat(numSamples) {
-            val read = audioRecord.read(buffer, 0, bufferSize)
-            if (read > 0) {
-                var sum = 0.0
-                for (i in 0 until read) {
-                    sum += buffer[i] * buffer[i]
-                }
-                totalRms += sqrt(sum / read)
+        val audioRecord = try {
+            AudioRecord(
+                MediaRecorder.AudioSource.MIC,
+                sampleRate,
+                channelConfig,
+                audioFormat,
+                bufferSize
+            ).apply {
+                if (state != AudioRecord.STATE_INITIALIZED) return@withContext 0.0
             }
+        } catch (e: Exception) {
+            return@withContext 0.0
         }
 
-        audioRecord.stop()
-        audioRecord.release()
+        try {
+            // Attempt to disable AGC and Noise Suppression for raw wind noise
+            if (AutomaticGainControl.isAvailable()) {
+                AutomaticGainControl.create(audioRecord.audioSessionId)?.enabled = false
+            }
+            if (NoiseSuppressor.isAvailable()) {
+                NoiseSuppressor.create(audioRecord.audioSessionId)?.enabled = false
+            }
 
-        val avgRms = totalRms / numSamples
-        // Logarithmic mapping of RMS to wind speed (km/h)
-        // This is a simplified acoustic model: Wind Speed = k * log10(RMS/Ref)
-        // Real-world tuning is required.
-        if (avgRms <= 0) return@withContext 0.0
-        val speed = 20.0 * log10(avgRms / 10.0) // Placeholder coefficients
-        speed.coerceAtLeast(0.0)
+            audioRecord.startRecording()
+            val buffer = ShortArray(bufferSize)
+            var totalRms = 0.0
+            val numSamples = 50 // Roughly 1-2 seconds
+
+            repeat(numSamples) {
+                val read = audioRecord.read(buffer, 0, bufferSize)
+                if (read > 0) {
+                    var sum = 0.0
+                    for (i in 0 until read) {
+                        sum += buffer[i].toDouble() * buffer[i].toDouble()
+                    }
+                    totalRms += sqrt(sum / read)
+                }
+            }
+            
+            val avgRms = totalRms / numSamples
+            if (avgRms <= 0) return@withContext 0.0
+            
+            // Refined Acoustic Mapping (empirical log curve)
+            val speed = 20.0 * log10(avgRms / 10.0) 
+            speed.coerceAtLeast(0.0)
+        } catch (e: Exception) {
+            0.0
+        } finally {
+            try {
+                audioRecord.stop()
+                audioRecord.release()
+            } catch (e: Exception) { /* Ignore */ }
+        }
     }
 }

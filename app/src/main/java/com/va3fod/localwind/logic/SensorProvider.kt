@@ -22,83 +22,77 @@ data class SensorData(
 
 class SensorProvider(context: Context) {
     private val sensorManager = context.getSystemService(Context.SENSOR_SERVICE) as SensorManager
-    private val accelerometer = sensorManager.getDefaultSensor(Sensor.TYPE_ACCELEROMETER)
-    private val magnetometer = sensorManager.getDefaultSensor(Sensor.TYPE_MAGNETIC_FIELD)
+    private val rotationVector = sensorManager.getDefaultSensor(Sensor.TYPE_ROTATION_VECTOR)
 
     /**
-     * Increased Window Size for extreme damping.
-     * Original was 30, now 90 (~1.8 seconds of lag at 50Hz)
-     * to make the compass 3 times slower and rock-solid.
+     * Damping window size.
+     * 60 samples at ~50Hz = ~1.2 seconds of rolling average.
+     * This provides a professional "weighted" feel without being sluggish.
      */
-    private val WINDOW_SIZE = 90
+    private val WINDOW_SIZE = 60
 
     fun getSensorUpdates(): Flow<SensorData> = callbackFlow {
-        var gravity: FloatArray? = null
-        var geomagnetic: FloatArray? = null
-        
-        // Rolling windows for Sine and Cosine
         val sinWindow = LinkedList<Float>()
         val cosWindow = LinkedList<Float>()
 
         val listener = object : SensorEventListener {
             override fun onSensorChanged(event: SensorEvent) {
-                if (event.sensor.type == Sensor.TYPE_ACCELEROMETER) {
-                    gravity = event.values.clone()
-                }
-                if (event.sensor.type == Sensor.TYPE_MAGNETIC_FIELD) {
-                    geomagnetic = event.values.clone()
-                }
+                if (event.sensor.type == Sensor.TYPE_ROTATION_VECTOR) {
+                    val rotationMatrix = FloatArray(9)
+                    SensorManager.getRotationMatrixFromVector(rotationMatrix, event.values)
 
-                if (gravity != null && geomagnetic != null) {
-                    val r = FloatArray(9)
-                    val i = FloatArray(9)
+                    val orientation = FloatArray(3)
                     
-                    if (SensorManager.getRotationMatrix(r, i, gravity, geomagnetic)) {
-                        val orientation = FloatArray(3)
-                        SensorManager.getOrientation(r, orientation)
-                        
-                        val rawAzimuthRad = orientation[0]
-                        val pitch = Math.toDegrees(orientation[1].toDouble()).toFloat()
-                        val roll = Math.toDegrees(orientation[2].toDouble()).toFloat()
+                    // 1. Detect physical orientation for stability
+                    SensorManager.getOrientation(rotationMatrix, orientation)
+                    val physicalPitch = Math.toDegrees(orientation[1].toDouble()).toFloat()
+                    
+                    val isSteady = Math.abs(physicalPitch) > 60
 
-                        // Component-based smoothing
-                        val s = sin(rawAzimuthRad)
-                        val c = cos(rawAzimuthRad)
-
-                        // Manage Window
-                        sinWindow.addLast(s)
-                        cosWindow.addLast(c)
-                        while (sinWindow.size > WINDOW_SIZE) {
-                            sinWindow.removeFirst()
-                            cosWindow.removeFirst()
-                        }
-
-                        // Average the components (Ultra-Heavy Damping)
-                        val avgSin = sinWindow.average().toFloat()
-                        val avgCos = cosWindow.average().toFloat()
-
-                        // Reconstruct Angle
-                        val filteredAzimuthRad = atan2(avgSin, avgCos)
-                        val azimuthDeg = Math.toDegrees(filteredAzimuthRad.toDouble()).toFloat()
-
-                        // Stability check: capture is vertical.
-                        val isSteady = Math.abs(pitch) > 75
-
-                        trySend(SensorData(
-                            azimuth = (azimuthDeg + 360) % 360,
-                            pitch = pitch,
-                            roll = roll,
-                            isSteady = isSteady
-                        ))
+                    // 2. Adaptive Coordinate Remapping
+                    val outR = FloatArray(9)
+                    if (isSteady) {
+                        // Vertical: Back camera is North reference
+                        SensorManager.remapCoordinateSystem(rotationMatrix, SensorManager.AXIS_X, SensorManager.AXIS_MINUS_Z, outR)
+                    } else {
+                        // Horizontal: Standard Top is North reference
+                        System.arraycopy(rotationMatrix, 0, outR, 0, 9)
                     }
+                    
+                    SensorManager.getOrientation(outR, orientation)
+                    val rawAzimuthRad = orientation[0]
+
+                    // 3. Component-based Moving Average Filter
+                    sinWindow.addLast(sin(rawAzimuthRad))
+                    cosWindow.addLast(cos(rawAzimuthRad))
+                    while (sinWindow.size > WINDOW_SIZE) {
+                        sinWindow.removeFirst()
+                        cosWindow.removeFirst()
+                    }
+
+                    val avgSin = sinWindow.average().toFloat()
+                    val avgCos = cosWindow.average().toFloat()
+
+                    // 4. Reconstruct Angle
+                    val filteredAzimuthRad = atan2(avgSin, avgCos)
+                    
+                    // Standard Android Azimuth is 0 at North, pi/2 at East, -pi/2 at West.
+                    // This is already clockwise positive 0-180 and negative 0-180.
+                    val azimuthDeg = (Math.toDegrees(filteredAzimuthRad.toDouble()).toFloat() + 360) % 360
+
+                    trySend(SensorData(
+                        azimuth = azimuthDeg,
+                        pitch = physicalPitch,
+                        roll = Math.toDegrees(orientation[2].toDouble()).toFloat(),
+                        isSteady = isSteady
+                    ))
                 }
             }
 
             override fun onAccuracyChanged(sensor: Sensor?, accuracy: Int) {}
         }
 
-        sensorManager.registerListener(listener, accelerometer, SensorManager.SENSOR_DELAY_GAME)
-        sensorManager.registerListener(listener, magnetometer, SensorManager.SENSOR_DELAY_GAME)
+        sensorManager.registerListener(listener, rotationVector, SensorManager.SENSOR_DELAY_GAME)
 
         awaitClose {
             sensorManager.unregisterListener(listener)

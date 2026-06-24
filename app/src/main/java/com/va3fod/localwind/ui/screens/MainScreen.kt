@@ -87,7 +87,7 @@ fun MainScreen(
                 MainScreenState.IDLE -> {
                     Spacer(modifier = Modifier.weight(1f))
                     Text(
-                        text = "Hold phone vertically,\nbottom edge pointing into the wind.",
+                        text = "Hold phone vertically,\nback camera pointing into the wind.",
                         style = MaterialTheme.typography.headlineSmall,
                         textAlign = TextAlign.Center,
                         lineHeight = 32.sp
@@ -96,10 +96,12 @@ fun MainScreen(
                     
                     if (uiState.isSteady) {
                         Text("READY TO CAPTURE", color = Color.Green, fontWeight = FontWeight.Bold, fontSize = 20.sp)
+                        Text("Point back camera into wind", style = MaterialTheme.typography.bodySmall)
                     } else {
                         CircularProgressIndicator(modifier = Modifier.size(24.dp))
                         Spacer(modifier = Modifier.height(8.dp))
                         Text("Stabilizing device...", color = Color.Red)
+                        Text("Hold phone upright (Portrait)", style = MaterialTheme.typography.bodySmall)
                     }
                     Spacer(modifier = Modifier.weight(1.5f))
                 }
