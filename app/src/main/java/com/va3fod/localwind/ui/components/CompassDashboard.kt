@@ -44,10 +44,10 @@ fun CompassDashboard(
 
             // 2. Rotating Compass Dial
             // Dial is fixed to True North by default (0 = True North)
-            // CurrentAzimuth is Magnetic Heading. True Heading = Magnetic + Declination.
+            // Magnetic Heading is currentAzimuth.
+            // True Heading = Magnetic Heading + Declination.
             val trueHeading = (currentAzimuth + declination + 360) % 360
             
-            // To keep True North (0 on dial) pointing North, we rotate the dial by -TrueHeading.
             rotate(-trueHeading, center) {
                 // Dial Circles
                 drawCircle(color = Color.DarkGray, radius = radius, center = center, style = Stroke(width = 1.dp.toPx()))
@@ -98,8 +98,9 @@ fun CompassDashboard(
                 drawPath(triPathTrue, color = Color.Cyan)
 
                 // 4. Magnetic North Indicator (Red Triangle)
-                // Magnetic North = True North - Declination. So rotate by -declination relative to dial 0.
-                rotate(-declination, center) {
+                // If declination is negative (e.g., -9.6), Magnetic North is at -9.6 degrees on the dial.
+                // This puts the Red triangle to the LEFT of the Cyan triangle at 0.
+                rotate(declination, center) {
                     val triPathMag = Path().apply {
                         moveTo(center.x, center.y - radius - 12.dp.toPx())
                         lineTo(center.x - 7.dp.toPx(), center.y - radius - 2.dp.toPx())
@@ -109,27 +110,19 @@ fun CompassDashboard(
                     drawPath(triPathMag, color = Color.Red)
                 }
 
-                // 5. Yellow Wind Arrow (Source -> Center)
-                // lockedWindDirection is True-North relative source direction.
+                // 5. YELLOW WIND TRIANGLE (Source -> Center)
                 rotate(lockedWindDirection, center) {
-                    val arrowLength = innerRadius * 0.45f
-                    val arrowHeadSize = 14.dp.toPx()
-                    val headTipRadius = innerRadius - arrowLength
-                    
-                    val path = Path().apply {
-                        moveTo(center.x, center.y - headTipRadius)
-                        lineTo(center.x - arrowHeadSize, center.y - headTipRadius + 20.dp.toPx())
-                        lineTo(center.x + arrowHeadSize, center.y - headTipRadius + 20.dp.toPx())
+                    val triPathWind = Path().apply {
+                        val tipY = center.y - innerRadius + 2.dp.toPx()
+                        val baseWidth = 14.dp.toPx()
+                        val height = 18.dp.toPx()
+                        
+                        moveTo(center.x, tipY)
+                        lineTo(center.x - baseWidth/2, tipY - height)
+                        lineTo(center.x + baseWidth/2, tipY - height)
                         close()
                     }
-                    
-                    drawLine(
-                        color = Color.Yellow,
-                        start = Offset(center.x, center.y - innerRadius + 5.dp.toPx()),
-                        end = Offset(center.x, center.y - headTipRadius),
-                        strokeWidth = 8.dp.toPx()
-                    )
-                    drawPath(path, color = Color.Yellow)
+                    drawPath(triPathWind, color = Color.Yellow)
                 }
             }
 

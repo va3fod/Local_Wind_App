@@ -51,7 +51,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun startMeasurementFlow() {
-        // Always go back to IDLE to enforce stability check
         _uiState.update { it.copy(screenState = MainScreenState.IDLE) }
     }
 
@@ -68,8 +67,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             val calibratedSpeed = rawSpeed * _uiState.value.calibrationFactor
 
             val declination = telemetry?.declination ?: 0f
+            
             // Formula: Wind Origin = (Capture Heading + Declination + 180) mod 360
-            val trueWindOrigin = (captureAzimuth + declination + 180f) % 360f
+            // Reverting to the version that includes the 180-degree offset for back-camera capture.
+            val trueWindOrigin = (captureAzimuth + declination + 180f + 360f) % 360f
 
             _uiState.update { 
                 it.copy(
