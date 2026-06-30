@@ -24,11 +24,16 @@ fun CompassDashboard(
     currentAzimuth: Float,
     lockedWindDirection: Float,
     declination: Float,
+    isDarkTheme: Boolean,
     modifier: Modifier = Modifier
 ) {
     val textMeasurer = rememberTextMeasurer()
+    val themeBackgroundColor = if (isDarkTheme) Color.Black else Color.White
+    val themeContentColor = if (isDarkTheme) Color.White else Color.Black
+    val tickColor = if (isDarkTheme) Color.LightGray else Color.DarkGray
+    val numberColor = if (isDarkTheme) Color.Gray else Color.Gray
 
-    Box(modifier = modifier.background(Color(0xFF121212))) {
+    Box(modifier = modifier.background(themeBackgroundColor)) {
         Canvas(modifier = Modifier.fillMaxSize()) {
             val center = Offset(size.width / 2, size.height / 2)
             val radius = size.minDimension / 2 * 0.95f
@@ -36,22 +41,19 @@ fun CompassDashboard(
 
             // 1. Static Reference Line (Lubber Line)
             drawLine(
-                color = Color.White,
+                color = themeContentColor,
                 start = Offset(center.x, center.y - radius - 5.dp.toPx()),
                 end = Offset(center.x, center.y - innerRadius),
                 strokeWidth = 2.dp.toPx()
             )
 
             // 2. Rotating Compass Dial
-            // Dial is fixed to True North by default (0 = True North)
-            // Magnetic Heading is currentAzimuth.
-            // True Heading = Magnetic Heading + Declination.
             val trueHeading = (currentAzimuth + declination + 360) % 360
             
             rotate(-trueHeading, center) {
                 // Dial Circles
-                drawCircle(color = Color.DarkGray, radius = radius, center = center, style = Stroke(width = 1.dp.toPx()))
-                drawCircle(color = Color.DarkGray, radius = innerRadius, center = center, style = Stroke(width = 1.dp.toPx()))
+                drawCircle(color = Color.Gray, radius = radius, center = center, style = Stroke(width = 1.dp.toPx()))
+                drawCircle(color = Color.Gray, radius = innerRadius, center = center, style = Stroke(width = 1.dp.toPx()))
 
                 // Ticks and Degree Numbers
                 for (i in 0 until 360 step 2) {
@@ -61,7 +63,7 @@ fun CompassDashboard(
                     val tickLen = if (isCardinal) 18.dp.toPx() else if (isMajor) 12.dp.toPx() else 6.dp.toPx()
                     
                     drawLine(
-                        color = if (i == 0) Color.Cyan else Color.LightGray,
+                        color = if (i == 0) Color.Cyan else tickColor,
                         start = Offset(center.x + innerRadius * cos(angle), center.y + innerRadius * sin(angle)),
                         end = Offset(center.x + (innerRadius - tickLen) * cos(angle), center.y + (innerRadius - tickLen) * sin(angle)),
                         strokeWidth = if (isMajor) 2.dp.toPx() else 1.dp.toPx()
@@ -71,7 +73,7 @@ fun CompassDashboard(
                         val textRadius = innerRadius - 28.dp.toPx()
                         val textLayout = textMeasurer.measure(
                             text = i.toString(),
-                            style = TextStyle(color = Color.Gray, fontSize = 11.sp)
+                            style = TextStyle(color = numberColor, fontSize = 11.sp)
                         )
                         drawText(textLayout, topLeft = Offset(center.x + textRadius * cos(angle) - textLayout.size.width/2, center.y + textRadius * sin(angle) - textLayout.size.height/2))
                     }
@@ -83,7 +85,7 @@ fun CompassDashboard(
                     val angle = Math.toRadians(deg.toDouble() - 90).toFloat()
                     val textLayout = textMeasurer.measure(
                         text = label,
-                        style = TextStyle(color = if (deg == 0) Color.Cyan else Color.White, fontSize = 24.sp, fontWeight = FontWeight.Bold)
+                        style = TextStyle(color = if (deg == 0) Color.Cyan else themeContentColor, fontSize = 24.sp, fontWeight = FontWeight.Bold)
                     )
                     drawText(textLayout, topLeft = Offset(center.x + (innerRadius - 35.dp.toPx()) * cos(angle) - textLayout.size.width/2, center.y + (innerRadius - 35.dp.toPx()) * sin(angle) - textLayout.size.height/2))
                 }
@@ -98,8 +100,6 @@ fun CompassDashboard(
                 drawPath(triPathTrue, color = Color.Cyan)
 
                 // 4. Magnetic North Indicator (Red Triangle)
-                // If declination is negative (e.g., -9.6), Magnetic North is at -9.6 degrees on the dial.
-                // This puts the Red triangle to the LEFT of the Cyan triangle at 0.
                 rotate(declination, center) {
                     val triPathMag = Path().apply {
                         moveTo(center.x, center.y - radius - 12.dp.toPx())

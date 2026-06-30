@@ -16,15 +16,28 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
     private val _calibrationFactor = MutableStateFlow("1.0")
     val calibrationFactor: StateFlow<String> = _calibrationFactor.asStateFlow()
 
+    private val _isDarkTheme = MutableStateFlow(true)
+    val isDarkTheme: StateFlow<Boolean> = _isDarkTheme.asStateFlow()
+
     init {
         viewModelScope.launch {
             val savedFactor = repository.calibrationFactor.first()
             _calibrationFactor.value = savedFactor.toString()
+            
+            val savedTheme = repository.isDarkTheme.first()
+            _isDarkTheme.value = savedTheme
         }
     }
 
     fun updateCalibrationFactor(newValue: String) {
         _calibrationFactor.value = newValue
+    }
+
+    fun setTheme(isDark: Boolean) {
+        _isDarkTheme.value = isDark
+        viewModelScope.launch {
+            repository.setDarkTheme(isDark)
+        }
     }
 
     fun saveSettings() {

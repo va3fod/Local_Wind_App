@@ -15,12 +15,17 @@ data class MainUiState(
     val currentAzimuth: Float = 0f,
     val isSteady: Boolean = false,
     val lockedWindDirection: Float = 0f,
-    val lockedWindSpeed: Double = 0.0,
+    val rawLockedWindSpeed: Double = 0.0, // Store raw speed for dynamic calibration
     val lockedAltitude: Double = 0.0,
     val lockedDeclination: Float = 0f,
     val calibrationFactor: Float = 1.0f,
-    val showTrueNorth: Boolean = true
-)
+    val isDarkTheme: Boolean = true,
+    val showSupportDialog: Boolean = false
+) {
+    // Dynamically calculate speed based on current calibration factor
+    val calibratedWindSpeed: Double
+        get() = rawLockedWindSpeed * calibrationFactor
+}
 
 class MainViewModel(application: Application) : AndroidViewModel(application) {
     private val settingsRepository = SettingsRepository(application)
@@ -32,6 +37,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     val uiState: StateFlow<MainUiState> = _uiState.asStateFlow()
 
     init {
+        // Observe sensors
         sensorProvider.getSensorUpdates()
             .onEach { sensorData ->
                 _uiState.update { 
@@ -43,11 +49,28 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             }
             .launchIn(viewModelScope)
 
+        // Observe Settings
         settingsRepository.calibrationFactor
-            .onEach { factor ->
-                _uiState.update { it.copy(calibrationFactor = factor) }
-            }
+            .onEach { factor -> _uiState.update { it.copy(calibrationFactor = factor) } }
             .launchIn(viewModelScope)
+
+        settingsRepository.isDarkTheme
+            .onEach { isDark -> _uiState.update { it.copy(isDarkTheme = isDark) } }
+            .launchIn(viewModelScope)
+    }
+
+    fun toggleTheme() {
+        viewModelScope.launch {
+            settingsRepository.setDarkTheme(!_uiState.value.isDarkTheme)
+        }
+    }
+
+    fun showSupport() {
+        _uiState.update { it.copy(showSupportDialog = true) }
+    }
+
+    fun dismissSupport() {
+        _uiState.update { it.copy(showSupportDialog = false) }
     }
 
     fun startMeasurementFlow() {
@@ -63,28 +86,21 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             val telemetry = locationProvider.getCurrentTelemetry()
             val captureAzimuth = _uiState.value.currentAzimuth
             
+            // Capture raw wind speed
             val rawSpeed = windAnalyzer.measureWindSpeed()
-            val calibratedSpeed = rawSpeed * _uiState.value.calibrationFactor
 
             val declination = telemetry?.declination ?: 0f
-            
-            // Formula: Wind Origin = (Capture Heading + Declination + 180) mod 360
-            // Reverting to the version that includes the 180-degree offset for back-camera capture.
             val trueWindOrigin = (captureAzimuth + declination + 180f + 360f) % 360f
 
             _uiState.update { 
                 it.copy(
                     screenState = MainScreenState.VISUALIZATION,
-                    lockedWindSpeed = calibratedSpeed,
+                    rawLockedWindSpeed = rawSpeed,
                     lockedWindDirection = trueWindOrigin,
                     lockedAltitude = telemetry?.altitude ?: 0.0,
                     lockedDeclination = declination
                 )
             }
         }
-    }
-
-    fun toggleNorthType() {
-        _uiState.update { it.copy(showTrueNorth = !it.showTrueNorth) }
     }
 }
